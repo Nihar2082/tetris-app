@@ -1,20 +1,29 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-// Tetris in a single React component using HTML5 Canvas
-// Controls: ←/→ move, ↓ soft-drop, ↑ rotate, Z rotate CCW, Space hard-drop,
-// P pause, R restart
+/**
+ * Tetris – React + Canvas
+ * Desktop: ←/→ move, ↓ soft-drop, ↑/X rotate CW, Z rotate CCW, Space hard-drop, Shift/C hold, P pause, R restart
+ * Mobile:  tap=rotate, swipe L/R=move, swipe down=soft-drop, swipe up=hard-drop + on-screen controls
+ */
 
 export default function TetrisCanvas() {
   // ----- Game constants -----
   const COLS = 10;
   const ROWS = 20;
-  const CELL = 28; // pixel size of one block
-  const WELL_W = COLS * CELL;
-  const WELL_H = ROWS * CELL;
+
+  // responsive cell size (auto-fit)
+  const [cell, setCell] = useState(28);
+  const WELL_W = COLS * cell;
+  const WELL_H = ROWS * cell;
 
   const DROP_BASE_MS = 1000; // start drop speed
 
+  // Refs
   const canvasRef = useRef(null);
+  const wrapperRef = useRef(null); // container used to compute available width
+  const holdTimerRef = useRef(null); // for repeating mobile button actions
+  const touchStartRef = useRef(null); // track swipe start
+  const lastSwipeRef = useRef(0); // debounce swipes
 
   // Shapes and colors
   const TETROMINOES = useMemo(
@@ -56,6 +65,48 @@ export default function TetrisCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Responsive sizing: recompute cell based on container/viewport
+  useEffect(() => {
+    const recalc = () => {
+      const pad = 16; // px padding margin
+      const contW = wrapperRef.current ? wrapperRef.current.clientWidth : window.innerWidth;
+      const vh = window.innerHeight;
+      // leave room for UI on mobile
+      const availW = Math.max(180, contW - pad);
+      const availH = Math.max(240, vh - 220);
+      const target = Math.min(Math.floor(availW / COLS), Math.floor(availH / ROWS));
+      const clamped = Math.max(16, Math.min(36, target || 28));
+      setCell(clamped);
+    };
+    recalc();
+
+    let ro;
+    if ("ResizeObserver" in window && wrapperRef.current) {
+      ro = new ResizeObserver(recalc);
+      ro.observe(wrapperRef.current);
+    }
+    window.addEventListener("resize", recalc);
+    window.addEventListener("orientationchange", recalc);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", recalc);
+      window.removeEventListener("orientationchange", recalc);
+    };
+  }, []);
+
+  // Canvas DPI sizing when cell changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    canvas.width = Math.floor(WELL_W * dpr);
+    canvas.height = Math.floor(WELL_H * dpr);
+    canvas.style.width = WELL_W + "px";
+    canvas.style.height = WELL_H + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, [WELL_W, WELL_H]);
+
   // Main loop
   useEffect(() => {
     let rafId;
@@ -81,7 +132,7 @@ export default function TetrisCanvas() {
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, board, active, level]);
+  }, [running, board, active, level, cell]);
 
   // Keyboard controls
   useEffect(() => {
@@ -147,7 +198,6 @@ export default function TetrisCanvas() {
   }
   function bag() {
     const b = [...ORDER];
-    // Fisher-Yates
     for (let i = b.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [b[i], b[j]] = [b[j], b[i]];
@@ -159,7 +209,7 @@ export default function TetrisCanvas() {
   }
 
   function spawn(resetAcc = false) {
-    setActive((prev) => {
+    setActive(() => {
       const [head, ...rest] = queue;
       let q = rest;
       let nb = nextBag;
@@ -175,8 +225,7 @@ export default function TetrisCanvas() {
       const startY = -getTopOffset(m); // allow spawn above the visible area
       const piece = { x: startX, y: startY, m, c: shape.c, k: head };
       if (collides(board, piece)) {
-        // game over
-        setRunning(false);
+        setRunning(false); // game over
       }
       if (resetAcc) accRef.current = 0;
       setCanHold(true);
@@ -232,7 +281,6 @@ export default function TetrisCanvas() {
   }
 
   function scoreFor(n) {
-    // classic-ish scoring
     if (n === 1) return 100 * level;
     if (n === 2) return 300 * level;
     if (n === 3) return 500 * level;
@@ -254,7 +302,7 @@ export default function TetrisCanvas() {
       if (cleared > 0) {
         setLines((v) => v + cleared);
         setScore((s) => s + scoreFor(cleared));
-        setLevel((lv) => 1 + Math.floor((lines + cleared) / 10));
+        setLevel(1 + Math.floor((lines + cleared) / 10));
       }
       spawn(true);
     }
@@ -286,7 +334,7 @@ export default function TetrisCanvas() {
     if (cleared > 0) {
       setLines((v) => v + cleared);
       setScore((s) => s + scoreFor(cleared));
-      setLevel((lv) => 1 + Math.floor((lines + cleared) / 10));
+      setLevel(1 + Math.floor((lines + cleared) / 10));
     }
     spawn(true);
   }
@@ -300,7 +348,6 @@ export default function TetrisCanvas() {
   function rotate(rotFn) {
     if (!active) return;
     const rotated = rotFn(active.m);
-    // simple wall kicks
     const kicks = [0, -1, 1, -2, 2];
     for (const dx of kicks) {
       const test = { ...active, m: rotated, x: active.x + dx };
@@ -337,9 +384,9 @@ export default function TetrisCanvas() {
   // ----- Rendering -----
   function drawCell(ctx, x, y, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(x, y, CELL, CELL);
+    ctx.fillRect(x, y, cell, cell);
     ctx.strokeStyle = "rgba(0,0,0,0.15)";
-    ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+    ctx.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
   }
 
   function drawGrid(ctx) {
@@ -347,14 +394,14 @@ export default function TetrisCanvas() {
     ctx.lineWidth = 1;
     for (let x = 0; x <= COLS; x++) {
       ctx.beginPath();
-      ctx.moveTo(x * CELL + 0.5, 0);
-      ctx.lineTo(x * CELL + 0.5, WELL_H);
+      ctx.moveTo(x * cell + 0.5, 0);
+      ctx.lineTo(x * cell + 0.5, WELL_H);
       ctx.stroke();
     }
     for (let y = 0; y <= ROWS; y++) {
       ctx.beginPath();
-      ctx.moveTo(0, y * CELL + 0.5);
-      ctx.lineTo(WELL_W, y * CELL + 0.5);
+      ctx.moveTo(0, y * cell + 0.5);
+      ctx.lineTo(WELL_W, y * cell + 0.5);
       ctx.stroke();
     }
   }
@@ -376,8 +423,8 @@ export default function TetrisCanvas() {
     // existing board
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
-        const cell = board[y][x];
-        if (cell) drawCell(ctx, x * CELL, y * CELL, shade(cell, 0));
+        const cellColor = board[y][x];
+        if (cellColor) drawCell(ctx, x * cell, y * cell, shade(cellColor, 0));
       }
     }
 
@@ -387,10 +434,9 @@ export default function TetrisCanvas() {
       for (let y = 0; y < g.m.length; y++) {
         for (let x = 0; x < g.m[y].length; x++) {
           if (!g.m[y][x]) continue;
-          const nx = (g.x + x) * CELL;
-          const ny = (g.y + y) * CELL;
-          if (g.y + y >= 0)
-            drawCell(ctx, nx, ny, toAlpha(g.c, 0.25));
+          const nx = (g.x + x) * cell;
+          const ny = (g.y + y) * cell;
+          if (g.y + y >= 0) drawCell(ctx, nx, ny, toAlpha(g.c, 0.25));
         }
       }
     }
@@ -400,10 +446,9 @@ export default function TetrisCanvas() {
       for (let y = 0; y < active.m.length; y++) {
         for (let x = 0; x < active.m[y].length; x++) {
           if (!active.m[y][x]) continue;
-          const nx = (active.x + x) * CELL;
-          const ny = (active.y + y) * CELL;
-          if (active.y + y >= 0)
-            drawCell(ctx, nx, ny, shade(active.c, -8));
+          const nx = (active.x + x) * cell;
+          const ny = (active.y + y) * cell;
+          if (active.y + y >= 0) drawCell(ctx, nx, ny, shade(active.c, -8));
         }
       }
     }
@@ -421,7 +466,7 @@ export default function TetrisCanvas() {
     return rgbToHex(clamp(r), clamp(g), clamp(b));
   }
   function hexToRgb(hex) {
-    const v = hex.replace('#','');
+    const v = hex.replace("#", "");
     const num = parseInt(v, 16);
     if (v.length === 6) {
       return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
@@ -429,20 +474,20 @@ export default function TetrisCanvas() {
     return { r: 255, g: 255, b: 255 };
   }
   function rgbToHex(r, g, b) {
-    return (
-      "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")
-    );
+    return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
   }
 
   // ----- Rotation helpers -----
   function rotateMatrixCW(m) {
-    const h = m.length, w = m[0].length;
+    const h = m.length,
+      w = m[0].length;
     const res = Array.from({ length: w }, () => Array(h).fill(0));
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) res[x][h - 1 - y] = m[y][x];
     return res;
   }
   function rotateMatrixCCW(m) {
-    const h = m.length, w = m[0].length;
+    const h = m.length,
+      w = m[0].length;
     const res = Array.from({ length: w }, () => Array(h).fill(0));
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) res[w - 1 - x][y] = m[y][x];
     return res;
@@ -460,17 +505,90 @@ export default function TetrisCanvas() {
     return s ? s.m : [[1]];
   }
 
+  // ----- Touch & mobile helpers -----
+  const onCanvasTouchStart = useCallback(
+    (e) => {
+      if (!running) return;
+      const t = e.changedTouches[0];
+      touchStartRef.current = { x: t.clientX, y: t.clientY, time: performance.now() };
+    },
+    [running]
+  );
+
+  const onCanvasTouchEnd = useCallback(
+    (e) => {
+      if (!active || !running) return;
+      const now = performance.now();
+      if (now - lastSwipeRef.current < 60) return; // debounce small jitters
+
+      const t = e.changedTouches[0];
+      const s = touchStartRef.current;
+      if (!s) return;
+
+      const dx = t.clientX - s.x;
+      const dy = t.clientY - s.y;
+      const ax = Math.abs(dx),
+        ay = Math.abs(dy);
+      const TH = 28; // swipe threshold in px
+
+      if (ax < TH && ay < TH) {
+        // tap -> rotate CW
+        rotateCW();
+        lastSwipeRef.current = now;
+        return;
+      }
+      if (ax > ay) {
+        // horizontal swipe -> move
+        if (dx > 0) tryMove(1, 0, active.m);
+        else tryMove(-1, 0, active.m);
+      } else {
+        if (dy > 0) {
+          // swipe down -> soft drop twice
+          softDrop();
+          softDrop();
+        } else {
+          // swipe up -> hard drop
+          hardDrop();
+        }
+      }
+      lastSwipeRef.current = now;
+    },
+    [active, running]
+  );
+
+  const startHold = useCallback((fn, interval = 110) => {
+    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    fn();
+    holdTimerRef.current = setInterval(() => fn(), interval);
+  }, []);
+
+  const stopHold = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }, []);
+
+  // Cleanup press-and-hold timer on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    };
+  }, []);
+
   // ----- Render React UI -----
   return (
     <div className="w-full min-h-[80vh] flex flex-col items-center justify-start gap-4 p-4">
       <h1 className="text-2xl font-semibold">Tetris – Canvas</h1>
-      <div className="flex gap-6">
-        <div className="relative">
+      <div className="flex flex-col md:flex-row gap-6 w-full items-start justify-center">
+        <div className="relative mx-auto w-full md:w-auto" ref={wrapperRef}>
           <canvas
             ref={canvasRef}
             width={WELL_W}
             height={WELL_H}
-            className="rounded-2xl shadow-lg border border-white/10 bg-[#0b1221]"
+            onTouchStart={onCanvasTouchStart}
+            onTouchEnd={onCanvasTouchEnd}
+            className="rounded-2xl shadow-lg border border-white/10 bg-[#0b1221] touch-none"
           />
           {!running && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-xl rounded-2xl">
@@ -480,7 +598,8 @@ export default function TetrisCanvas() {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-3 min-w-[200px]">
+
+        <div className="flex flex-col gap-3 min-w-[200px] md:min-w-[220px] w-full md:w-auto">
           <Info label="Score" value={score} />
           <Info label="Lines" value={lines} />
           <Info label="Level" value={level} />
@@ -495,47 +614,97 @@ export default function TetrisCanvas() {
               ))}
             </div>
           </Info>
-          <div className="text-sm leading-6 mt-2">
-            <p className="font-medium">Controls</p>
+
+          {/* Desktop controls */}
+          <div className="text-sm leading-6 mt-2 hidden md:block">
+            <p className="font-medium">Keyboard Controls</p>
             <p>← → move, ↓ soft, Space hard</p>
             <p>↑ / X rotate CW, Z CCW</p>
             <p>Shift/C hold, P pause, R restart</p>
           </div>
-          <div className="flex gap-2 mt-2">
-            <button
-              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20"
-              onClick={() => setRunning((r) => !r)}
-            >
+          <div className="hidden md:flex gap-2 mt-2">
+            <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20" onClick={() => setRunning((r) => !r)}>
               {running ? "Pause" : "Resume"}
             </button>
-            <button
-              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20"
-              onClick={reset}
-            >
+            <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20" onClick={reset}>
               Restart
             </button>
           </div>
+
+          {/* Mobile Controls (only show on small screens) */}
+          <div className="md:hidden mt-4 w-full flex flex-col items-center gap-3">
+            <div className="grid grid-cols-3 gap-3 w-full max-w-sm">
+              <button
+                className="py-3 rounded-xl bg-white/10"
+                onTouchStart={() => startHold(() => tryMove(-1, 0, active?.m))}
+                onTouchEnd={stopHold}
+                onMouseDown={() => startHold(() => tryMove(-1, 0, active?.m))}
+                onMouseUp={stopHold}
+              >
+                ◀️
+              </button>
+
+              <button
+                className="py-3 rounded-xl bg-white/10"
+                onTouchStart={() => startHold(() => softDrop())}
+                onTouchEnd={stopHold}
+                onMouseDown={() => startHold(() => softDrop())}
+                onMouseUp={stopHold}
+              >
+                ⬇️
+              </button>
+
+              <button
+                className="py-3 rounded-xl bg-white/10"
+                onTouchStart={() => startHold(() => tryMove(1, 0, active?.m))}
+                onTouchEnd={stopHold}
+                onMouseDown={() => startHold(() => tryMove(1, 0, active?.m))}
+                onMouseUp={stopHold}
+              >
+                ▶️
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 w-full max-w-sm">
+              <button className="py-3 rounded-xl bg-white/10" onClick={rotateCCW}>
+                ⟲
+              </button>
+              <button className="py-3 rounded-xl bg-white/10" onClick={rotateCW}>
+                ⟳
+              </button>
+              <button className="py-3 rounded-xl bg-white/10" onClick={hardDrop}>
+                ⬇︎⬇︎
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 w-full max-w-sm">
+              <button className="py-3 rounded-xl bg-white/10" onClick={doHold}>
+                Hold
+              </button>
+              <button className="py-3 rounded-xl bg-white/10" onClick={() => setRunning((r) => !r)}>
+                {running ? "Pause" : "Resume"}
+              </button>
+              <button className="py-3 rounded-xl bg-white/10" onClick={reset}>
+                Restart
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <p className="text-xs opacity-60">Tip: Press Space for a satisfying hard drop.</p>
+      <p className="text-xs opacity-60">Tip: Press Space for a satisfying hard drop. Tap or swipe on mobile.</p>
     </div>
   );
 
-  // Info subcomponent
+  // ----- Subcomponents -----
   function Info({ label, value, children }) {
     return (
       <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
         <div className="text-xs opacity-70">{label}</div>
-        {children ? (
-          <div className="mt-1">{children}</div>
-        ) : (
-          <div className="text-lg font-semibold">{value}</div>
-        )}
+        {children ? <div className="mt-1">{children}</div> : <div className="text-lg font-semibold">{value}</div>}
       </div>
     );
   }
 
-  // Mini preview renderer
   function MiniPiece({ mat, color }) {
     const block = 12;
     const pad = 2;
@@ -550,7 +719,6 @@ export default function TetrisCanvas() {
       ctx.fillStyle = "#0b1221";
       ctx.fillRect(0, 0, w, h);
       if (!mat) return;
-      // center matrix within 4x4 box
       const mh = mat.length;
       const mw = mat[0].length;
       const offX = Math.floor((4 - mw) / 2);
@@ -562,7 +730,6 @@ export default function TetrisCanvas() {
           ctx.fillRect((offX + x) * block + pad, (offY + y) * block + pad, block - 1, block - 1);
         }
       }
-      // border
       ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
     }, [mat, color]);
