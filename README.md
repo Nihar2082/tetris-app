@@ -1,12 +1,59 @@
-# React + Vite
+Tetris Game — React + Vite
+This repository contains a simple and fun Tetris game built with React and Vite.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+About the Project
+The project leverages React’s component-based architecture combined with Vite’s fast build tool and hot module replacement (HMR) to provide a smooth development experience and fast load times.
 
-Currently, two official plugins are available:
+React handles the UI components and game logic.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Vite enables lightning-fast builds and instant updates during development.
 
-## Expanding the ESLint configuration
+ESLint is configured to help keep the code clean and maintainable.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+This setup uses modern JavaScript tooling and best practices to create a minimal yet fully functional Tetris game.
+
+How to Play
+Use your keyboard to control the falling blocks:
+
+Arrow Left / Right: Move the piece left or right
+
+Arrow Down: Speed up the piece falling
+
+Arrow Up or Space: Rotate the piece
+
+P: Pause or resume the game
+
+Clear horizontal lines by filling them completely to score points.
+
+The game ends when the pieces stack up to the top of the playfield.
+
+Note: The game is optimized for desktop use with keyboard controls.
+
+Features
+Classic Tetris gameplay with falling blocks and line clearing
+
+Responsive design and smooth animations
+
+Fast Refresh for quick development iterations
+
+ESLint rules for consistent code style
+
+Tech Stack
+React (with JSX)
+
+Vite as the build tool and dev server
+
+ESLint for linting and code quality
+
+Getting Started
+Clone the repo, install dependencies, and start the development server:
+
+bash
+Copy
+Edit
+npm install
+npm run dev
+Open your browser at http://localhost:5173 to play the game locally.
+
+Deployment
+This project can be easily deployed on platforms like Vercel for quick sharing with friends or portfolio showcasing.
